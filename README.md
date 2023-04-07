@@ -34,7 +34,7 @@ Note that in the input alignment file, the subject end position must be greater 
 python3 align2cdsRegions.py [arguments]
 
 Mandatory arguments :
-  -i, --input                 path to the input alignment file
+  -i, --input                 path to the input alignment file ('.gz' file allowed)
   -g, --gff                   path to the gene features file of the subject ('.gz' file allowed)
   -f, --fasta                 path to the fasta sequences file of the subject  ('.gz' file allowed)
   -s, --sseqid                [int] column number of the subject sequence id

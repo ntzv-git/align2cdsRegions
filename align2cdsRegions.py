@@ -20,8 +20,11 @@ Note that in the input alignment file, the subject end position must be greater 
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8
-Version : 1.0
-Date    : 24/03/2023
+Date    : 27/03/2023
+
+New :
+- Some corrections in 'usage()'
+- Adding the program version to the log file
 """
 
 import getopt
@@ -33,6 +36,8 @@ import time
 from datetime import datetime
 from Bio import SeqIO
 
+# Version
+VERSION = "1.01"
 
 # Default parameters
 INPUT = None
@@ -357,8 +362,9 @@ def main():
         log_file = open_file(LOG_FILE, "at")
         log_file.write(f"#{'-' * 50}\n")
         time_now = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
-        log_file.write(f"#The region annotation from the GFF files was added the {time_now}\n\n")
-        log_file.write(f"#Parameters\n"
+        log_file.write(f"#Execution of align2cdsRegions v{VERSION} on {time_now}\n"
+                       f"\n"
+                       f"#Parameters\n"
                        f"Input            : {INPUT}\n"
                        f"Output           : {OUTPUT}\n"
                        f"Subject GFF      : {GFF}\n"
@@ -486,37 +492,37 @@ def parse_file_lines(file_path: str, has_header=False) -> list:
 
 def usage() -> None:
     """ Display the usage of the program in the terminal. """
-    print("\nUsage :\n"
-          "  python3 align2cdsRegions.py [arguments]\n"
-          "\n"
-          "Mandatory arguments :\n"
-          "  -i, --input                 path to the input alignment file\n"
-          "  -g, --gff                   path to the gene features file of the subject ('.gz' file allowed)\n"
-          "  -f, --fasta                 path to the fasta sequences file of the subject  ('.gz' file allowed)\n"
-          "  -s, --sseqid                [int] column number of the subject sequence id\n"
-          "  -a, --sstart                [int] column number of start position in subject (sstart must be lower than "
-          "send)\n"
-          "  -e, --send                  [int] column number of end position in subject (send must be greater than "
-          "sstart)\n"
-          "  -t, --strand                [int] column number of the targeted strand on subject\n"
-          "\n"
-          "Optional arguments :\n"
-          "  -5, --utr5_size             [int] size of the 5' flanking region of the CDS to consider (default is 20 "
-          "nt)\n"
-          "  -3, --utr3_size             [int] size of the 3' flanking region of the CDS to consider (default is 150 "
-          "nt)\n"
-          "  -r, --icr_size              [int] size of the intercistronic region between CDS (default is 5 nt)\n"
-          "  -o, --output                path to write the output\n"
-          "  -d, --delimiter             field separator of the input file (default is '\\t')\n"
-          "  -l, --has_header            indicates that the input file has a header\n"
-          "  -v, --verbose               write in a log file the program parameters, the number of nearest CDS found "
-          "and the total sizes of each region (on both strands)\n"
-          "  -F, --force                 delete the output file if it exists\n"
-          "  -h, --help                  how to use the program\n"
-          "\n"
-          "Example:\n"
-          "  python3 align2cdsRegions.py -i Example/align_MH-DSM.tsv -o align_MH-DSM_regions.tsv -g "
-          "Example/MH-DSM.gff.gz -f Example/MH-DSM.fna.gz -s 2 -a 5 -e 6 -t 8 -l -v -F\n")
+    print(f"\nUsage of align2cdsRegions v{VERSION}\n"
+          f"  python3 align2cdsRegions.py [arguments]\n"
+          f"\n"
+          f"Mandatory arguments :\n"
+          f"  -i, --input                 path to the input alignment file ('.gz' file allowed)\n"
+          f"  -g, --gff                   path to the gene features file of the subject ('.gz' file allowed)\n"
+          f"  -f, --fasta                 path to the fasta sequences file of the subject ('.gz' file allowed)\n"
+          f"  -s, --sseqid                [int] column number of the subject sequence id\n"
+          f"  -a, --sstart                [int] column number of start position in subject (sstart must be lower than "
+          f"send)\n"
+          f"  -e, --send                  [int] column number of end position in subject (send must be greater than "
+          f"sstart)\n"
+          f"  -t, --strand                [int] column number of the targeted strand on subject\n"
+          f"\n"
+          f"Optional arguments :\n"
+          f"  -5, --utr5_size             [int] size of the 5' flanking region of the CDS to consider (default is 20 "
+          f"nt)\n"
+          f"  -3, --utr3_size             [int] size of the 3' flanking region of the CDS to consider (default is 150 "
+          f"nt)\n"
+          f"  -r, --icr_size              [int] size of the intercistronic region between CDS (default is 5 nt)\n"
+          f"  -o, --output                path to write the output\n"
+          f"  -d, --delimiter             field separator of the input file (default is '\\t')\n"
+          f"  -l, --has_header            indicates that the input file has a header\n"
+          f"  -v, --verbose               write in a log file the program parameters, the number of nearest CDS found "
+          f"and the total sizes of each region (on both strands)\n"
+          f"  -F, --force                 delete the output file if it exists\n"
+          f"  -h, --help                  how to use the program\n"
+          f"\n"
+          f"Example:\n"
+          f"  python3 align2cdsRegions.py -i Example/align_MH-DSM.tsv -o align_MH-DSM_regions.tsv -g "
+          f"Example/MH-DSM.gff.gz -f Example/MH-DSM.fna.gz -s 2 -a 5 -e 6 -t 8 -l -v -F\n")
 
 
 if __name__ == "__main__":
@@ -528,7 +534,7 @@ if __name__ == "__main__":
                                  'strand=', 'utr5_size=', 'utr3_size=', 'icr_size=', 'has_header', 'verbose', 'force',
                                  'help'])
     except getopt.GetoptError as err:
-        print_error(f"{str(err)[0].upper() + str(err)[1:]}")
+        print(f"\033[31mError : {str(err)[0].upper() + str(err)[1:]}\033[0m")
         usage()
         sys.exit(2)
 
