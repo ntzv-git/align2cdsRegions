@@ -4,11 +4,10 @@
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8+
-Version : 1.2
+Version : 1.1
 </pre>
 
 ## Description
-
 The program adds to the input alignments, the region where they match, and the cds information nearest to them. These regions can be a 5' flanking region (5UTR), a 3' flanking region (3UTR), a CDS region (CDS), a small intergenic region (UTR), a intercistronic region (ICR), an overlapping CDS region (OVL), or a region located elsewhere on the sequence (OTHER).
 
 The program starts by parsing the Gene Features File (GFF) and genome file (FASTA) which respectively contain the CDS and the length informations of the subject. It then transforms the subject sequence into a region dictionary with the region coordinates (start, end) as key and the subject region name (CDS, UTR, etc...) as value.
@@ -22,17 +21,15 @@ If verbose, the program returns in a log file the total sizes of each region (on
 Note that in the input alignment file, the subject end position must be greater than the subject start position.
 
 ## Dependencies
-
 - getopt
 - gzip
 - os
 - sys
 - time
-- datetime (from datetime pakage)
-- SeqIO (from Bio pakage)
+- datetime
+- SeqIO
 
 ## Usage
-
 ```
 python3 align2cdsRegions.py [arguments]
 
@@ -58,11 +55,8 @@ Optional arguments :
 ```
   
 ## Example
-
-``` bash
-python3 align2cdsRegions.py -i Example/align_MH-DSM.tsv -o align_MH-DSM_regions.tsv -g Example/MH-DSM.gff.gz -f Example/MH-DSM.fna.gz -s 2 -a 5 -e 6 -t 8 -l -v -F
-```
+`python3 align2cdsRegions.py -i Example/align_MH-DSM.tsv -o align_MH-DSM_regions.tsv -g Example/MH-DSM.gff.gz -f Example/MH-DSM.fna.gz -s 2 -a 5 -e 6 -t 8 -l -v -F
+`
 
 ## License
-
 Free and unrestricted use.

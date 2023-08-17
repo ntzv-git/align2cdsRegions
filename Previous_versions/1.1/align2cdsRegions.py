@@ -37,7 +37,7 @@ from datetime import datetime
 from Bio import SeqIO
 
 # Version
-VERSION = "1.2"
+VERSION = "1.1"
 
 # Default parameters
 INPUT = None
