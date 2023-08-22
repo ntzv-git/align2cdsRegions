@@ -19,8 +19,7 @@ Note :
  - in the input alignment file, the subject end position must be greater than the subject start position.
  - the calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In
  fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The
- "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS, or -1 if no CDS is annotated
- for the subject in the GFF.
+ "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
  - if the input alignment file contains several genomes from different organisms, the best way to perform the analysis
  (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a
  single file (rather than running the tool one by one for each organism).
@@ -301,11 +300,11 @@ class GFFasDict:
         """
         if len(self.dict_region_cdslines[seq_id][strand]) == 0:
             # If there is no CDS on this sequence
-            return None, -1
+            return None, None
         else:
             # Searches for the nearest CDS
             min_distance = 1_000_000_000  # Arbitrary distance value to start the search
-            nearest_cds_line = None
+            nearest_cds_line = ""
 
             for start_end, cds_line in self.dict_region_cdslines[seq_id][strand].items():
                 cds_start, cds_end = start_end
@@ -409,7 +408,7 @@ def main():
 
         # Write the result in the output file OUTPUT_STD
         if not nearest_cds:
-            cds_start = cds_stop = ""
+            cds_start = cds_stop = nearest_distance = ""
             cds_id = ""
             not_nearest_cds += 1
         else:
