@@ -2,20 +2,28 @@
 # -*- coding: utf-8 -*-
 
 """
-The program adds to the input alignments, the region where they match, and the cds information nearest to them. These
-regions can be a 5' flanking region (5FLR), a 3' flanking region (3FLR), a CDS region (CDS), a small inter-feature
-region (SIR), an overlapping CDS region (OVL), or a region located elsewhere on the
-sequence (OTHER).
+The program adds to the input alignments, the region where the query match on the subject, as well as the distance,
+coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a 3' flanking region
+(3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a region located
+elsewhere on the sequence (OTHER).
 The program starts by parsing the Gene Features File (GFF) and genome file (FASTA) which respectively contain the CDS
 and the length informations of the subject. It then transforms the subject sequence into a region dictionary with the
-region coordinates (start, end) as key and the subject region name (CDS, FLR, etc...) as value.
-For each alignment, the program returns the CDS nearest to the query, using the coordinates of the subject center. Thus,
-for each alignment, a nearest CDS is added, unless no CDS is annotated on the subject strand on which the query matches.
-An OTHER annotation is indicated when the region where the query matches is neither a CDS, nor a FLR, nor
-an OVL. The query matches may be far from an annotated CDS or may be on a CDS located on the other strand.
-If verbose, the program returns in the log file the total sizes of each region (on both strands).
-Note that in the input alignment file, the subject end position must be greater than the subject start position.
-
+region coordinates (start, end) as key and the subject region name (CDS, FLR, OVL etc...) as value.
+For each alignment, the program returns the CDS nearest to the query, using the coordinates of the subject center
+(aligned query). Thus, for each alignment, a nearest CDS is added, except if no CDS is annotated on the subject strand
+on which the query aligns.
+An OTHER annotation is indicated when the region where the query matches is neither a CDS, a FLR, a SIR nor an OVL. In
+this case, the query alignment may be far from an annotated CDS or may be on a CDS located on the other strand.
+If verbose, the program returns all the parameters and total sizes of each region (on both strands) in the log file.
+Note :
+ - in the input alignment file, the subject end position must be greater than the subject start position.
+ - the calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In
+ fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The
+ "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS, or -1 if no CDS is annotated
+ for the subject in the GFF.
+ - if the input alignment file contains several genomes from different organisms, the best way to perform the analysis
+ (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a
+ single file (rather than running the tool one by one for each organism).
 
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
@@ -24,8 +32,8 @@ Date    : 18/08/2023
 
 New :
 - Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature region)
-- Removing the intercistronic region (ICR) from possible annotated regions
--
+- Removes intercistronic region (ICR) from possible annotated regions
+- Adds the distance between the query center and the nearest CDS in a new column of the output
 """
 
 import getopt
@@ -132,7 +140,7 @@ class GFFasDict:
         """
         Considering all sequence ids and both strands, this method returns two dictionaries : the first one with
         coordinates (start, end) as keys and corresponding regions as values ; and the second one with coordinates
-        (start, end) as keys and corresponding CDS informations as values.
+        (start, end) as keys and corresponding CDS GFF line as values.
         :return: Return a dictionary of regions coordinates and a dictionary of CDS coordinates
         """
         # Initialization
@@ -283,30 +291,32 @@ class GFFasDict:
         p_other = region_prop["OTHER"]
         return f"5FLR={p_5flr};3FLR={p_3flr};SIR={p_sir};CDS={p_cds};OVL={p_ovl};OTHER={p_other}"
 
-    def get_nearest_cds(self, seq_id: str, strand: chr, target_position: int) -> str:
+    def get_nearest_cds(self, seq_id: str, strand: chr, target_position: int) -> (str, float):
         """
-        Returns the line of the nearest cds from the query_position and on the targeted strand.
+        Returns the line of the nearest cds from the aligned position and on the aligned strand.
         :param seq_id: Subject sequence id
         :param strand: Subject strand
-        :param target_position: Position of the query on the subject to consider
-        :return: Nearest CDS informations from the target position
+        :param target_position: Center of the query on the subject to consider
+        :return: CDS GFF line nearest to target position and its corresponding distance
         """
-        # Initialization
-        min_distance = 1_000_000_000  # arbitrary distance value
-        nearest_cds_line = None
-
-        for start_end, cds_line in self.dict_region_cdslines[seq_id][strand].items():
-            cds_start, cds_end = start_end
-
+        if len(self.dict_region_cdslines[seq_id][strand]) == 0:
+            # If there is no CDS on this sequence
+            return None, -1
+        else:
             # Searches for the nearest CDS
-            if min(cds_start, cds_end) < target_position < max(cds_start, cds_end):
-                return cds_line
-            distance = min(abs(cds_start - target_position), abs(cds_end - target_position))
-            if distance < min_distance:
-                min_distance = distance
-                nearest_cds_line = cds_line
+            min_distance = 1_000_000_000  # Arbitrary distance value to start the search
+            nearest_cds_line = None
 
-        return nearest_cds_line
+            for start_end, cds_line in self.dict_region_cdslines[seq_id][strand].items():
+                cds_start, cds_end = start_end
+                if min(cds_start, cds_end) < target_position < max(cds_start, cds_end):
+                    # If target inside the CDS
+                    return cds_line, 0
+                distance = min(abs(cds_start - target_position), abs(cds_end - target_position))
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_cds_line = cds_line
+        return nearest_cds_line, min_distance
 
 
 def get_region(target_start: int, target_end: int, region_dict: dict) -> str:
@@ -377,7 +387,7 @@ def main():
 
     # Parses header
     if HEADER:
-        header = f"{get_header(INPUT)[:-1]}{FS}region{FS}cds_start{FS}cds_end{FS}cds_id\n"
+        header = f"{get_header(INPUT)[:-1]}{FS}region{FS}cds_dist{FS}cds_start{FS}cds_end{FS}cds_id\n"
         output_lines.append(header)
 
     # Processing : Iteration for each alignment in INPUT
@@ -389,9 +399,9 @@ def main():
         target_end = int(line_split[SEND - 1])
         strand = line_split[STRAND - 1]
 
-        # Searches for the nearest cds
-        target_center = (target_start + target_end) // 2
-        nearest_cds = gffasdict.get_nearest_cds(sseqid, strand, target_center)
+        # Searches for the nearest cds and its distance
+        target_center = (target_start + target_end) / 2
+        nearest_cds, nearest_distance = gffasdict.get_nearest_cds(sseqid, strand, target_center)
 
         # Searches for regions corresponding to the start and stop positions on the subject
         region_dict = gffasdict.dict_region_locannot[sseqid][strand]
@@ -406,7 +416,7 @@ def main():
             _, _, _, cds_start, cds_stop, _, _, _, cds_attributes = nearest_cds[:-1].split(sep="\t")
             cds_id = parse_cds_attributes(cds_attributes)
 
-        output_line = f"{line[:-1]}{FS}{region}{FS}{cds_start}{FS}{cds_stop}{FS}{cds_id}\n"
+        output_line = f"{line[:-1]}{FS}{region}{FS}{nearest_distance}{FS}{cds_start}{FS}{cds_stop}{FS}{cds_id}\n"
         output_lines.append(output_line)
 
     # Ending : writes the output
