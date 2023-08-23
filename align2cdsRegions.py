@@ -30,9 +30,11 @@ Python  : v3.8
 Date    : 18/08/2023
 
 New :
-- Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature region)
+- Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature
+region)
 - Removes intercistronic region (ICR) from possible annotated regions
 - Adds the distance between the query center and the nearest CDS in a new column of the output
+- Improvement in the recognition of the regions covered by the query (GFFasDict.get_region())
 """
 
 import getopt
@@ -63,13 +65,6 @@ FORCE = False
 FLR5_SIZE = 20
 FLR3_SIZE = 150
 LOG_FILE = f"align2cdsRegions.log"
-REGION_CONVERT = {
-    "CDS": "CDS", "5FLR": "5FLR", "3FLR": "3FLR", "SIR": "SIR", "OTHER": "OTHER", "OVL": "OVL",
-    "CDS-CDS": "CDS-CDS", "5FLR-3FLR": "5FLR-3FLR", "3FLR-5FLR": "5FLR-3FLR",
-    "CDS-5FLR": "CDS-5FLR", "5FLR-CDS": "CDS-5FLR", "CDS-3FLR": "CDS-3FLR", "3FLR-CDS": "CDS-3FLR",
-    "CDS-SIR": "CDS-SIR", "SIR-CDS": "CDS-SIR", "CDS-OVL": "CDS-OVL", "OVL-CDS": "CDS-OVL",
-    "5FLR-OTHER": "5FLR-OTHER", "OTHER-5FLR": "5FLR-OTHER",
-    "3FLR-OTHER": "3FLR-OTHER", "OTHER-3FLR": "3FLR-OTHER", "CDS-OTHER": "CDS-OTHER", "OTHER-CDS": "CDS-OTHER"}
 
 
 class GFFasDict:
@@ -79,8 +74,9 @@ class GFFasDict:
     def __init__(self, gff_path: str, fasta_path: str):
         list_gfflines = parse_file_lines(gff_path)
         dict_seqid_len = self.__parse_fasta(fasta_path)
-        self.dict_seq_data = self.__parse_gff(list_gfflines, dict_seqid_len)
-        self.dict_region_locannot, self.dict_region_cdslines = self.__parse_region()
+        dict_seq_data = self.__parse_gff(list_gfflines, dict_seqid_len)
+        self.__dict_region_locannot, self.__dict_region_cdslines = self.__parse_region(dict_seq_data)
+        self.__dict_region_listannot = self.__interval2list_region()
         self.region_sizes = self.__genome_region_sizes()
 
     @staticmethod
@@ -135,11 +131,12 @@ class GFFasDict:
 
         return dict_seq_data
 
-    def __parse_region(self) -> (dict, dict):
+    def __parse_region(self, dict_seq_data: dict) -> (dict, dict):
         """
         Considering all sequence ids and both strands, this method returns two dictionaries : the first one with
         coordinates (start, end) as keys and corresponding regions as values ; and the second one with coordinates
         (start, end) as keys and corresponding CDS GFF line as values.
+        :param dict_seqid_len: Dictionary with for each sequence id, its length and the CDS coordinates
         :return: Return a dictionary of regions coordinates and a dictionary of CDS coordinates
         """
         # Initialization
@@ -147,15 +144,15 @@ class GFFasDict:
         dict_region_cdsloclines = dict()  # e.g. {seq_id: {'+': {(cds-region_start, cds-region_end): cds_line,...}, ...}
 
         # Iteration on each sequence id
-        for seq_id in self.dict_seq_data.keys():
+        for seq_id in dict_seq_data.keys():
             dict_region_locannot[seq_id] = {"+": dict(), "-": dict()}
             dict_region_cdsloclines[seq_id] = {"+": dict(), "-": dict()}
-            seq_len = self.dict_seq_data[seq_id]["len"]
+            seq_len = dict_seq_data[seq_id]["len"]
 
             # Iteration on each strand
             for strand in ["+", "-"]:
                 dict_region_locannot[seq_id][strand], dict_region_cdsloclines[seq_id][strand] = \
-                    self.__parse_region_cds(self.dict_seq_data[seq_id], seq_len, strand)
+                    self.__parse_region_cds(dict_seq_data[seq_id], seq_len, strand)
 
         return dict_region_locannot, dict_region_cdsloclines
 
@@ -265,6 +262,29 @@ class GFFasDict:
 
         return region_dict, cds_idx_dict
 
+    def __interval2list_region(self) -> dict:
+        """
+        Returns for each seq_id, the strand re-annotated by the tool for which the nucleotides are replaced by
+        region-identifier pairs. The identifiers are unique to each region in order to ensure that each region is
+        unique.
+        e.g.
+        "ACTTGGCTG ATG CCTGTACGTAAACGGCGAGTA UAG CTTGTGGTAGCGCTT" with the CDS start with "ATG" and ends with "UAG"
+        will be transform to something like :
+        "OOOOOO555 CCC CCCCCCCCCCCCCCCCCCCCC CCC 3333333OOOOOOOO" with O: OTHER ; 5: 5'FLR (3 nucleotides long) ;
+        C: CDS ; 3 : 3'FLR (7 nucleotides long) except that each region character is a pair of regions and a unique if.
+        :return: A dictionary of lists representing the nucleotide sequence in the form of regions
+        """
+        dict_region_listannot = dict()  # e.g. {seq_id: {'+': [('OT', 0), ('OT', 0), ('5"', 1), ('CDS', 2), ...], ...}
+        region_id = 0  # unique id for each region
+
+        for seq_id in self.__dict_region_locannot:
+            dict_region_listannot[seq_id] = {"+": list(), "-": list()}
+            for strand in self.__dict_region_locannot[seq_id].keys():
+                for loc, annot in self.__dict_region_locannot[seq_id][strand].items():
+                    dict_region_listannot[seq_id][strand] += [(annot, region_id)] * (loc[1] - loc[0] + 1)
+                    region_id += 1
+        return dict_region_listannot
+
     def __genome_region_sizes(self) -> str:
         """
         Returns the sum of the sizes (in nucleotide) of each region in all contigs in the targeted genome.
@@ -273,9 +293,9 @@ class GFFasDict:
         """
         region_prop = {"5FLR": 0, "3FLR": 0, "SIR": 0, "CDS": 0, "OVL": 0, "OTHER": 0}
 
-        for seq_id in self.dict_region_locannot:
+        for seq_id in self.__dict_region_locannot:
             for strand in ['+', '-']:
-                for position, region in self.dict_region_locannot[seq_id][strand].items():
+                for position, region in self.__dict_region_locannot[seq_id][strand].items():
                     start = position[0]
                     stop = position[1]
                     region_prop[region] += (stop - start + 1)
@@ -298,7 +318,7 @@ class GFFasDict:
         :param target_position: Center of the query on the subject to consider
         :return: CDS GFF line nearest to target position and its corresponding distance
         """
-        if len(self.dict_region_cdslines[seq_id][strand]) == 0:
+        if len(self.__dict_region_cdslines[seq_id][strand]) == 0:
             # If there is no CDS on this sequence
             return None, None
         else:
@@ -306,7 +326,7 @@ class GFFasDict:
             min_distance = 1_000_000_000  # Arbitrary distance value to start the search
             nearest_cds_line = ""
 
-            for start_end, cds_line in self.dict_region_cdslines[seq_id][strand].items():
+            for start_end, cds_line in self.__dict_region_cdslines[seq_id][strand].items():
                 cds_start, cds_end = start_end
                 if min(cds_start, cds_end) < target_position < max(cds_start, cds_end):
                     # If target inside the CDS
@@ -317,35 +337,24 @@ class GFFasDict:
                     nearest_cds_line = cds_line
         return nearest_cds_line, min_distance
 
+    def get_region(self, seq_id: str, strand: chr, target_start: int, target_end: int) -> str:
+        """
+        Parses the dictionary of region lists and returns in which region(s) the target match.
+        :param seq_id: Subject sequence id
+        :param strand: Subject strand
+        :param target_start: Start position of the target on the subject sequence (subject start)
+        :param target_end: Stop position of the target on the subject sequence (subject end)
+        :return: Return the annoted region(s) of this coordinates (separated by a '-', if multiple targeted regions)
+        """
+        list_pairs = self.__dict_region_listannot[seq_id][strand]
+        list_covered_pairs = list_pairs[(target_start - 1):target_end]
+        list_covered_pairs_nr = list(dict.fromkeys(list_covered_pairs))  # removes redundancies
+        list_covered_regions = [pair[0] for pair in list_covered_pairs_nr]
+        if strand == "-":
+            list_covered_regions.reverse()
 
-def get_region(target_start: int, target_end: int, region_dict: dict) -> str:
-    """
-    Parses the region dictionary and returns in which region(s) the start and stop positions of the target match.
-    :param target_start: Start position of the target on the subject sequence
-    :param target_end: Stop position of the target on the subject sequence
-    :param region_dict: Region coordinates dictionary of a given .gff file
-    :return: Return the annoted region(s) of this coordinates (separated by a '-', if multiple targeted regions)
-    """
-    annotation = ""
-
-    for position, region in region_dict.items():
-        start = position[0]
-        stop = position[1]
-
-        if (start - 1) < target_start < (stop + 1) and (start - 1) < target_end < (stop + 1):
-            return region
-        elif (start - 1) < target_start < (stop + 1):
-            annotation = region + "-" + annotation
-        elif (start - 1) < target_end < (stop + 1):
-            annotation += region
-
-    if not annotation:
-        raise ValueError(f"No region found for target position ({target_start}, {target_end})")
-
-    if annotation[-1] == "-":
-        annotation = annotation[:-1]
-
-    return REGION_CONVERT[annotation]
+        str_covered_regions = "-".join(list_covered_regions)
+        return str_covered_regions
 
 
 def main():
@@ -403,8 +412,7 @@ def main():
         nearest_cds, nearest_distance = gffasdict.get_nearest_cds(sseqid, strand, target_center)
 
         # Searches for regions corresponding to the start and stop positions on the subject
-        region_dict = gffasdict.dict_region_locannot[sseqid][strand]
-        region = get_region(target_start, target_end, region_dict)
+        region = gffasdict.get_region(sseqid, strand, target_start, target_end)
 
         # Write the result in the output file OUTPUT_STD
         if not nearest_cds:
@@ -505,9 +513,11 @@ def usage() -> None:
           f"  -t, --strand                [int] column number of the targeted strand on subject\n"
           f"\n"
           f"Optional arguments :\n"
-          f"  -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider (default is 20 "
+          f"  -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider "
+          f"(default is 20 "
           f"nt)\n"
-          f"  -3, --3flr_size             [int] size of the 3' flanking region sequence of the CDS to consider (default is 150 "
+          f"  -3, --3flr_size             [int] size of the 3' flanking region sequence of the CDS to consider "
+          f"(default is 150 "
           f"nt)\n"
           f"  -o, --output                path to write the output\n"
           f"  -d, --delimiter             field separator of the input file (default is '\\t')\n"
