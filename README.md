@@ -53,9 +53,9 @@ git clone https://github.com/ntzv-git/align2cdsRegions.git
 python3 align2cdsRegions.py [arguments]
 
 Mandatory arguments :
-  -i, --input                 path to the input alignment file ('.gz' file allowed)
-  -g, --gff                   path to the gene features file of the subject ('.gz' file allowed)
-  -f, --fasta                 path to the fasta sequences file of the subject ('.gz' file allowed)
+  -i, --input                 [str] path to the input alignment file ('.gz' file allowed)
+  -g, --gff                   [str] path to the gene features file of the subject ('.gz' file allowed)
+  -f, --fasta                 [str] path to the fasta sequences file of the subject ('.gz' file allowed)
   -s, --sseqid                [int] column number of the subject sequence id
   -a, --sstart                [int] column number of start position in subject (sstart must be lower than send)
   -e, --send                  [int] column number of end position in subject (send must be greater than sstart)
@@ -64,9 +64,10 @@ Mandatory arguments :
 Optional arguments :
   -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider (default is 20 nt)
   -3, --3flr_size             [int] size of the 3' flanking region sequence of the CDS to consider (default is 150 nt)
-  -o, --output                path to write the output
-  -d, --delimiter             field separator of the input file (default is '\t')
-  -l, --has_header            indicates that the input file has a header
+  -x, --feature_type          [str] type of the feature to search (column 3) in the GFF (default is 'cds')
+  -o, --output                [str] path to write the output
+  -d, --delimiter             [chr] field separator of the input file (default is '\t')
+  -l, --has_header            indicates that the input file has a first line header (the program will report it in the output file)
   -v, --verbose               write in a log file the program parameters, the number of nearest CDS found and the total sizes of each region (on both strands)
   -F, --force                 delete the output file if it exists
   -h, --help                  how to use the program

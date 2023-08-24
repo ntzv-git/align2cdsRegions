@@ -35,6 +35,7 @@ region)
 - Removes intercistronic region (ICR) from possible annotated regions
 - Adds the distance between the query center and the nearest CDS in a new column of the output
 - Improvement in the recognition of the regions covered by the query (GFFasDict.get_region())
+- Adds the possibility to perform analyses either on CDS, genes or other feature types (column 3 in the GFF)
 """
 
 import getopt
@@ -64,6 +65,7 @@ VERBOSE = False
 FORCE = False
 FLR5_SIZE = 20
 FLR3_SIZE = 150
+FEATURE_TYPE = "CDS"
 LOG_FILE = f"align2cdsRegions.log"
 
 
@@ -99,18 +101,16 @@ class GFFasDict:
     def __parse_gff(list_gfflines: list, dict_seqid_len: dict) -> dict:
         """
         Parses all the lines of the GFF file to get for each sequence id, its length and the CDS coordinates.
-        It returns a dictionary formated as :
-        dict_seq_data = {'seqid': {'len': seqlength, '+': {'CDS':{(start, end): cds_line, ...}, ...}, '-': ...}, ...}
         :param list_gfflines: List of all lines in the GFF file
         :param dict_seqid_len: Dictionary with sequence id as keys and sequence length as values
         :return: Dictionary with for each sequence id, its length and the CDS coordinates
         """
         # Parses sequence_id and sequence_length using FASTA
-        dict_seq_data = dict()
+        dict_seq_data = dict()  # e.g. {'seqid': {'len': seqlength, '+': {(start, end): cds_line, ...}, '-': ...}, ...}
         for seqid, seqlen in dict_seqid_len.items():
             dict_seq_data[seqid] = {"+": dict(), "-": dict(), "len": seqlen}
             for strand in ["+", "-"]:
-                dict_seq_data[seqid][strand] = {"CDS": dict()}
+                dict_seq_data[seqid][strand] = dict()
 
         # Parses all feature_type data using GFF
         for line in list_gfflines:
@@ -121,13 +121,13 @@ class GFFasDict:
                 # Parse the feature information
                 line_split = line[:-1].split(sep="\t")
                 seqid = line_split[0]
-                feature_type = line_split[2]
+                feature_type = line_split[2].upper()
                 feature_start = line_split[3]
                 feature_end = line_split[4]
                 feature_strand = line_split[6]
 
-                if feature_type == "CDS":
-                    dict_seq_data[seqid][feature_strand][feature_type][(int(feature_start), int(feature_end))] = line
+                if feature_type == FEATURE_TYPE:
+                    dict_seq_data[seqid][feature_strand][(int(feature_start), int(feature_end))] = line
 
         return dict_seq_data
 
@@ -178,7 +178,7 @@ class GFFasDict:
         cds_idx_dict = dict()  # dictionary storing all cds lines
         region_start = 1
         region_end = contig_len
-        startend_line_dict = dict_contig_cdsloc[strand]["CDS"]
+        startend_line_dict = dict_contig_cdsloc[strand]
         startend_list = list(startend_line_dict.keys())
 
         if strand == "+":
@@ -220,7 +220,8 @@ class GFFasDict:
             if (cds_start - (prev_regioncds_end + 1)) < 0:
                 cds_idx_dict[(prev_regioncds_start, (prev_regioncds_end - (prev_regioncds_end - cds_start) - 1))] = \
                     startend_line_dict[(prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, (prev_regioncds_end - (prev_regioncds_end - cds_start) - 1))] = "CDS"
+                region_dict[(prev_regioncds_start, (prev_regioncds_end - (prev_regioncds_end - cds_start) - 1))] = \
+                    FEATURE_TYPE
                 region_dict[((prev_regioncds_end - (prev_regioncds_end - cds_start)), prev_regioncds_end)] = "OVL"
                 cds_start = (prev_regioncds_end + 1)  # For prev_cds_start to take the value '(prev_cds_stop + 1)'
 
@@ -228,13 +229,13 @@ class GFFasDict:
             elif (cds_start - (prev_regioncds_end + 1)) == 0:
                 cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = \
                     startend_line_dict[(prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = "CDS"
+                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
 
             # Short inter-feature region
             elif (cds_start - (prev_regioncds_end + 1)) <= (left_ext + right_ext):
                 cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[
                     (prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = "CDS"
+                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
                 region_dict[((prev_regioncds_end + 1), (cds_start - 1))] = "SIR"
 
             # Large inter-feature region
@@ -242,7 +243,7 @@ class GFFasDict:
                 # elif (cds_start - (prev_regioncds_end + 1)) >= (left_ext + right_ext):
                 cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[
                     (prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = "CDS"
+                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
                 region_dict[((prev_regioncds_end + 1), (prev_regioncds_end + right_ext))] = chr_right + "FLR"
                 region_dict[((prev_regioncds_end + right_ext + 1), (cds_start - left_ext - 1))] = "OTHER"
                 region_dict[((cds_start - left_ext), (cds_start - 1))] = chr_left + "FLR"
@@ -253,7 +254,7 @@ class GFFasDict:
 
         # Processing on last CDS
         cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[(prev_cds_start, prev_cds_end)]
-        region_dict[(prev_regioncds_start, prev_regioncds_end)] = "CDS"
+        region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
         if (region_end - prev_regioncds_end) > right_ext:
             region_dict[((prev_regioncds_end + 1), (prev_regioncds_end + right_ext))] = chr_right + "FLR"
             region_dict[((prev_regioncds_end + right_ext + 1), region_end)] = "OTHER"
@@ -291,7 +292,7 @@ class GFFasDict:
         Sizes format is 5FLR;3FLR;SIR;CDS;OVL;OTHER
         :Return: String with total size of each region in the genome
         """
-        region_prop = {"5FLR": 0, "3FLR": 0, "SIR": 0, "CDS": 0, "OVL": 0, "OTHER": 0}
+        region_prop = {"5FLR": 0, "3FLR": 0, "SIR": 0, FEATURE_TYPE: 0, "OVL": 0, "OTHER": 0}
 
         for seq_id in self.__dict_region_locannot:
             for strand in ['+', '-']:
@@ -299,16 +300,16 @@ class GFFasDict:
                     start = position[0]
                     stop = position[1]
                     region_prop[region] += (stop - start + 1)
-                    if region not in ["5FLR", "3FLR", "SIR", "CDS", "OVL", "OTHER"]:
+                    if region not in ["5FLR", "3FLR", "SIR", FEATURE_TYPE, "OVL", "OTHER"]:
                         raise ValueError(f"Unknown region '{region}'")
 
         p_5flr = region_prop["5FLR"]
         p_3flr = region_prop["3FLR"]
         p_sir = region_prop["SIR"]
-        p_cds = region_prop["CDS"]
+        p_cds = region_prop[FEATURE_TYPE]
         p_ovl = region_prop["OVL"]
         p_other = region_prop["OTHER"]
-        return f"5FLR={p_5flr};3FLR={p_3flr};SIR={p_sir};CDS={p_cds};OVL={p_ovl};OTHER={p_other}"
+        return f"5FLR={p_5flr};3FLR={p_3flr};SIR={p_sir};{FEATURE_TYPE}={p_cds};OVL={p_ovl};OTHER={p_other}"
 
     def get_nearest_cds(self, seq_id: str, strand: chr, target_position: int) -> (str, float):
         """
@@ -373,18 +374,19 @@ def main():
         log_file.write(f"#Log of align2cdsRegions v{VERSION} on {time_now}\n"
                        f"\n"
                        f"#Parameters\n"
-                       f"Input            : {INPUT}\n"
-                       f"Output           : {OUTPUT}\n"
-                       f"Subject GFF      : {GFF}\n"
-                       f"Subject fasta    : {FASTA}\n"
-                       f"Subject seq id   : column {SSEQID}\n"
-                       f"Subject start    : column {SSTART}\n"
-                       f"Subject end      : column {SEND}\n"
-                       f"Strand           : column {STRAND}\n"
-                       f"5'FLR size       : {FLR5_SIZE} nt\n"
-                       f"3'FLR size       : {FLR3_SIZE} nt\n"
-                       f"FS               : '{FS}'\n"
-                       f"Header           : {HEADER}\n\n")
+                       f"Input             : {INPUT}\n"
+                       f"Output            : {OUTPUT}\n"
+                       f"Subject GFF       : {GFF}\n"
+                       f"Subject fasta     : {FASTA}\n"
+                       f"Subject seq id    : column {SSEQID}\n"
+                       f"Subject start     : column {SSTART}\n"
+                       f"Subject end       : column {SEND}\n"
+                       f"Strand            : column {STRAND}\n"
+                       f"5'FLR size        : {FLR5_SIZE} nt\n"
+                       f"3'FLR size        : {FLR3_SIZE} nt\n"
+                       f"Feature type      : {FEATURE_TYPE.lower()}\n"
+                       f"FS                : '{FS}'\n"
+                       f"Header            : {HEADER}\n\n")
         log_file.close()
 
     # Parses the GFF and FASTA files to get the predicted regions
@@ -395,7 +397,8 @@ def main():
 
     # Parses header
     if HEADER:
-        header = f"{get_header(INPUT)[:-1]}{FS}region{FS}cds_dist{FS}cds_start{FS}cds_end{FS}cds_id\n"
+        header = (f"{get_header(INPUT)[:-1]}{FS}region{FS}{FEATURE_TYPE.lower()}_dist{FS}{FEATURE_TYPE.lower()}_start"
+                  f"{FS}{FEATURE_TYPE.lower()}_end{FS}{FEATURE_TYPE.lower()}_id\n")
         output_lines.append(header)
 
     # Processing : Iteration for each alignment in INPUT
@@ -439,9 +442,9 @@ def main():
     if VERBOSE:
         log_file = open_file(LOG_FILE, "at")
         log_file.write(f"#Results\n"
-                       f"CDS found for    : {input_line_number - not_nearest_cds}/{input_line_number} alignments\n"
-                       f"Region sizes     : {region_sizes}\n"
-                       f"Execution time   : {round(time.time() - start_time, 2)} sec\n\n")
+                       f"Feature found for : {input_line_number - not_nearest_cds}/{input_line_number} alignments\n"
+                       f"Region sizes      : {region_sizes}\n"
+                       f"Execution time    : {round(time.time() - start_time, 2)} sec\n\n")
         log_file.close()
 
 
@@ -502,9 +505,9 @@ def usage() -> None:
           f"  python3 align2cdsRegions.py [arguments]\n"
           f"\n"
           f"Mandatory arguments :\n"
-          f"  -i, --input                 path to the input alignment file ('.gz' file allowed)\n"
-          f"  -g, --gff                   path to the gene features file of the subject ('.gz' file allowed)\n"
-          f"  -f, --fasta                 path to the fasta sequences file of the subject ('.gz' file allowed)\n"
+          f"  -i, --input                 [str] path to the input alignment file ('.gz' file allowed)\n"
+          f"  -g, --gff                   [str] path to the gene features file of the subject ('.gz' file allowed)\n"
+          f"  -f, --fasta                 [str] path to the fasta sequences file of the subject ('.gz' file allowed)\n"
           f"  -s, --sseqid                [int] column number of the subject sequence id\n"
           f"  -a, --sstart                [int] column number of start position in subject (sstart must be lower than "
           f"send)\n"
@@ -514,14 +517,15 @@ def usage() -> None:
           f"\n"
           f"Optional arguments :\n"
           f"  -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider "
-          f"(default is 20 "
-          f"nt)\n"
+          f"(default is 20 nt)\n"
           f"  -3, --3flr_size             [int] size of the 3' flanking region sequence of the CDS to consider "
-          f"(default is 150 "
-          f"nt)\n"
-          f"  -o, --output                path to write the output\n"
-          f"  -d, --delimiter             field separator of the input file (default is '\\t')\n"
-          f"  -l, --has_header            indicates that the input file has a header\n"
+          f"(default is 150 nt)\n"
+          f"  -x, --feature_type          [str] type of the feature to search (column 3) in the GFF (default is "
+          f"'cds')\n"
+          f"  -o, --output                [str] path to write the output\n"
+          f"  -d, --delimiter             [chr] field separator of the input file (default is '\\t')\n"
+          f"  -l, --has_header            indicates that the input file has a first line header (the program will "
+          f"report it in the output file)\n"
           f"  -v, --verbose               write in a log file the program parameters, the number of nearest CDS found "
           f"and the total sizes of each region (on both strands)\n"
           f"  -F, --force                 delete the output file if it exists\n"
@@ -536,10 +540,10 @@ if __name__ == "__main__":
     # Fetches input arguments
     try:
         opts, _ = getopt.getopt(sys.argv[1:],
-                                'i:o:g:f:d:s:a:e:t:5:3:r:lvFh',
-                                ['input=', 'output=', 'gff=', 'fasta=', 'delimiter=', 'sseqid=', 'sstart=', 'send=',
-                                 'strand=', '5flr_size=', '3flr_size=', 'has_header', 'verbose', 'force',
-                                 'help'])
+                                'i:o:g:f:d:s:a:e:t:5:3:x:lvFh',
+                                ['input=', 'output=', 'gff=', 'fasta=', 'delimiter=', 'sseqid=', 'sstart=',
+                                 'send=', 'strand=', '5flr_size=', '3flr_size=', 'feature_type=', 'has_header',
+                                 'verbose', 'force', 'help'])
     except getopt.GetoptError as err:
         print(f"\033[31mError : {str(err)[0].upper() + str(err)[1:]}\033[0m")
         usage()
@@ -568,6 +572,8 @@ if __name__ == "__main__":
             FLR5_SIZE = int(arg)
         elif option == '-3' or option == '--3flr_size':
             FLR3_SIZE = int(arg)
+        elif option == '-x' or option == '--feature_type':
+            FEATURE_TYPE = arg.upper()
         elif option == '-l' or option == '--has_header':
             HEADER = True
         elif option == '-v' or option == '--verbose':
