@@ -16,7 +16,6 @@ An OTHER annotation is indicated when the region where the query matches is neit
 this case, the query alignment may be far from an annotated CDS or may be on a CDS located on the other strand.
 If verbose, the program returns all the parameters and total sizes of each region (on both strands) in the log file.
 Note :
- - in the input alignment file, the subject end position must be greater than the subject start position.
  - the calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In
  fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The
  "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
@@ -27,7 +26,7 @@ Note :
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8
-Date    : 18/08/2023
+Date    : 04/09/2023
 
 New :
 - Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature
@@ -44,7 +43,6 @@ import os
 import sys
 import time
 
-from datetime import datetime
 from Bio import SeqIO
 
 # Version
@@ -71,15 +69,16 @@ LOG_FILE = f"align2cdsRegions.log"
 
 class GFFasDict:
     """
-    Converts a GFF file into an object with CDS and region informations.
+    Converts a GFF file into an object with feature (CDS/gene) and region informations.
     """
     def __init__(self, gff_path: str, fasta_path: str):
         list_gfflines = parse_file_lines(gff_path)
         dict_seqid_len = self.__parse_fasta(fasta_path)
-        dict_seq_data = self.__parse_gff(list_gfflines, dict_seqid_len)
-        self.__dict_region_locannot, self.__dict_region_cdslines = self.__parse_region(dict_seq_data)
-        self.__dict_region_listannot = self.__interval2list_region()
-        self.region_sizes = self.__genome_region_sizes()
+        self.dict_features = self.__parse_gff(list_gfflines, dict_seqid_len)
+        self.dict_locregions = self.__parse_region(self.dict_features)
+        # print(f"dict_locregions : {self.dict_locregions}")
+        # sys.exit(0)
+        self.region_sizes = self.__genome_region_sizes(self.dict_locregions)
 
     @staticmethod
     def __parse_fasta(file_path: str) -> dict:
@@ -97,16 +96,15 @@ class GFFasDict:
         #     dict_seqid_len[record.id] = len(record.seq)
         return dict_seqid_len
 
-    @staticmethod
-    def __parse_gff(list_gfflines: list, dict_seqid_len: dict) -> dict:
+    def __parse_gff(self, list_gfflines: list, dict_seqid_len: dict) -> dict:
         """
-        Parses all the lines of the GFF file to get for each sequence id, its length and the CDS coordinates.
+        Parses all the lines of the GFF file to get for each sequence id, its length and the feature coordinates.
         :param list_gfflines: List of all lines in the GFF file
         :param dict_seqid_len: Dictionary with sequence id as keys and sequence length as values
-        :return: Dictionary with for each sequence id, its length and the CDS coordinates
+        :return: Dictionary with for each sequence id, its length and the feature coordinates
         """
         # Parses sequence_id and sequence_length using FASTA
-        dict_seq_data = dict()  # e.g. {'seqid': {'len': seqlength, '+': {(start, end): cds_line, ...}, '-': ...}, ...}
+        dict_seq_data = dict()  # e.g. {'seqid': {'len': seqlength, '+': {(start, end): feature_id, ...}, '-': ...}...}
         for seqid, seqlen in dict_seqid_len.items():
             dict_seq_data[seqid] = {"+": dict(), "-": dict(), "len": seqlen}
             for strand in ["+", "-"]:
@@ -127,60 +125,169 @@ class GFFasDict:
                 feature_strand = line_split[6]
 
                 if feature_type == FEATURE_TYPE:
-                    dict_seq_data[seqid][feature_strand][(int(feature_start), int(feature_end))] = line
+                    start = min((int(feature_start), int(feature_end)))
+                    end = max((int(feature_start), int(feature_end)))
+                    dict_seq_data[seqid][feature_strand][(start, end)] = self.parse_featureid(line[:-1])
 
         return dict_seq_data
 
-    def __parse_region(self, dict_seq_data: dict) -> (dict, dict):
+    @staticmethod
+    def parse_featureid(gffline: str) -> str:
         """
-        Considering all sequence ids and both strands, this method returns two dictionaries : the first one with
-        coordinates (start, end) as keys and corresponding regions as values ; and the second one with coordinates
-        (start, end) as keys and corresponding CDS GFF line as values.
-        :param dict_seqid_len: Dictionary with for each sequence id, its length and the CDS coordinates
-        :return: Return a dictionary of regions coordinates and a dictionary of CDS coordinates
+        Parses the GFF line to get the feature id.
+        :param gffline: Line of the feature in the GFF
+        :retrun: Return the feature id
+        """
+        attribute = gffline.split(sep="\t")[8]
+        return attribute.split(";")[0].split("=")[1]
+
+    def __parse_region(self, dict_features: dict) -> dict:
+        """
+        Considering all sequence ids and both strands, this method returns a dictionnary with coordinates (start, end)
+        as keys and corresponding regions as values.
+        :param dict_features: Dictionary with for each sequence id, its length and the feature coordinates
+        :return: Return a dictionary of regions coordinates and a dictionary of feature coordinates
         """
         # Initialization
-        dict_region_locannot = dict()  # e.g. {seq_id: {'+': {(region_start, region_end): region, ...}, '-': ...}
-        dict_region_cdsloclines = dict()  # e.g. {seq_id: {'+': {(cds-region_start, cds-region_end): cds_line,...}, ...}
+        dict_locregions = dict()  # e.g. {seq_id: {'+': {(region_start, region_end): region, ...}, '-': ...}
 
         # Iteration on each sequence id
-        for seq_id in dict_seq_data.keys():
-            dict_region_locannot[seq_id] = {"+": dict(), "-": dict()}
-            dict_region_cdsloclines[seq_id] = {"+": dict(), "-": dict()}
-            seq_len = dict_seq_data[seq_id]["len"]
+        for seq_id in dict_features.keys():
+            dict_locregions[seq_id] = {"+": dict(), "-": dict()}
+            seq_len = dict_features[seq_id]["len"]
 
             # Iteration on each strand
             for strand in ["+", "-"]:
-                dict_region_locannot[seq_id][strand], dict_region_cdsloclines[seq_id][strand] = \
-                    self.__parse_region_cds(dict_seq_data[seq_id], seq_len, strand)
+                # Group overlapping features into a list
+                list_startend = list(set(dict_features[seq_id][strand].keys()))
+                list_relations = self.__get_relations(list_startend)
 
-        return dict_region_locannot, dict_region_cdsloclines
+                # Process on all overlapping feature groups
+                list_ovf = list()  # ovf : overlapping features
+                dict_blocks = dict()
+                for block in list_relations:
+                    list_ovf += block
+
+                    # Search for all positions where the features overlaps to each other
+                    list_intersects = self.__interval_intersections(block)
+
+                    # Merge all the feature intersections (removing of overlapping redundancies)
+                    list_intersects = self.__intersection_merge(list_intersects)
+
+                    # Convert block to regions
+                    block_union = self.__interval_union(block)
+                    dict_blocks[block_union] = self.__ovf2regions(list_intersects, block_union)
+
+                # Search for and add non-overlapping features to the dictionary
+                list_nof = list(set(list_startend) - set(list_ovf))  # nof : non-overlapping features
+                for feature in list_nof:
+                    dict_blocks[feature] = {feature: FEATURE_TYPE}
+
+                # Annotates regions flanking blocks
+                dict_locregions[seq_id][strand] = self.__blocks2regions(dict_blocks, seq_len, strand)
+
+        return dict_locregions
+
+    def __search_pairwise_relations(self, intervals: [tuple]) -> list:
+        """
+        Search for pairwise overlapping relationships between intervals in a list.
+        :param intervals: List of tuple (start, end)
+        :return: List of relations between the tuples
+        """
+        # Sort intervals
+        intervals.sort(key=lambda x: x[1])
+        intervals.sort(key=lambda x: x[0])
+
+        len_inter = len(intervals)
+        relations = list()  # e.g. [[a, b], [a, d], [b, c], [c, f]...] with a, b ... f are tuples
+        for i in range(len_inter):
+            for j in range((i + 1), len_inter):
+                if self.__two_interval_intersect(intervals[i], intervals[j]):
+                    relations.append([intervals[i], intervals[j]])
+        return relations
+
+    def __all_children(self, parent: tuple, graph: dict) -> set:
+        """
+        Recursive function that searches in a graph for all the children of a given parent.
+        :param parent: Tuple of (start, end) position
+        :param graph: Dictionary with parent as key and children in a list as values (directed acyclic graph)
+        :return: Set of all childs of the parent
+        """
+        if parent not in graph:
+            return set()
+        ll = list()
+        for i in graph[parent]:
+            for j in self.__all_children(i, graph):
+                ll.append(j)
+        # return set(graph[parent] + [j for i in graph[parent] for j in all_children(i, graph)])
+        return set(graph[parent] + ll)
+
+    def __get_relations(self, intervals: [tuple]) -> list:
+        """
+        Extract and group interval that overlap to each other.
+        :param intervals: List of intervals
+        :return: List of grouped overlapping intervals
+        """
+        # Define relationships between overlatpping intervals
+        pairwise_relations = self.__search_pairwise_relations(intervals)
+
+        # Make a directed acyclic graph based on relationships
+        overlap_graph = {}
+        for parent, child in pairwise_relations:
+            overlap_graph.setdefault(parent, []).append(child)
+
+        # Search for all roots of the graph (parents who are not children of another)
+        childs = set(child for child_list in overlap_graph.values() for child in child_list)
+        graph_roots = set(overlap_graph) - childs
+
+        # Group overlapping features into a dict
+        dict_relations = {parent: self.__all_children(parent, overlap_graph) for parent in graph_roots}
+
+        return [[parent] + list(childs) for parent, childs in dict_relations.items()]
 
     @staticmethod
-    def __parse_region_cds(dict_contig_cdsloc: dict, contig_len: int, strand: chr) -> (dict, dict):
+    def __ovf2regions(intervals: [tuple], startend: tuple) -> dict:
         """
-        Parse the CDS dict to returns a region dict {(start, stop) : region, ...} and the corresponding cds
-        dict {(start, pos): cds_line, ...} for a given sequence and a given strand.
-      - CDS   : coding sequence
-      - 5FLR  : 5' flanking region
-      - 3FLR  : 3' flanking region
-      - SIR   : short inter-feature region
-      - OVL   : overlap region of 2 CDS
-      - OTHER : other region on the genome (in all other cases; result not interpretable)
-
-        :param dict_contig_cdsloc: Dictionary of all CDS coordinates in a given sequence id
-        :param contig_len: Length of the sequence
-        :param strand: Strand of the targeted sequence
-        :return: Returns a dictionary of regions and a dictionary of CDS coordinates (cut by region if overlapping)
+        Converts a list of intervals into a dictionary of CDS-OVL regions with position as keys and annotated regions
+        as values.
+        :param intervals: List of non overlapping intervals
+        :param startend: Tuple of the start and the end position of the interval list
+        :return: Dictionnary of annotated regions
         """
-        # Initialization
-        region_dict = dict()  # dictionary storing all region positions
-        cds_idx_dict = dict()  # dictionary storing all cds lines
-        region_start = 1
-        region_end = contig_len
-        startend_line_dict = dict_contig_cdsloc[strand]
-        startend_list = list(startend_line_dict.keys())
+        intervals.sort(key=lambda x: x[1])
+        intervals.sort(key=lambda x: x[0])
+        dict_regions = dict()  # e.g.  {(1, 4): 'CDS', (5, 9): 'OVL', (10, 17): 'CDS', ...}
+        start, end = startend
+        cursor = min(start, intervals[0][0])
 
+        # Process on first interval
+        if cursor == intervals[0][0]:
+            dict_regions[intervals[0]] = "OVL"
+        else:
+            dict_regions[(start, (intervals[0][0] - 1))] = FEATURE_TYPE
+            dict_regions[intervals[0]] = "OVL"
+        cursor = (intervals[0][1] + 1)
+        # Process on next intervals
+        for interval in intervals[1:]:
+            if interval[0] != cursor:
+                dict_regions[(cursor, (interval[0] - 1))] = FEATURE_TYPE
+            dict_regions[interval] = "OVL"
+            cursor = (interval[1] + 1)
+        # Add last region
+        if cursor <= end:
+            dict_regions[(cursor, end)] = FEATURE_TYPE
+
+        return dict_regions
+
+    @staticmethod
+    def __blocks2regions(dict_blocks: dict, seq_len: int, strand: chr) -> dict:
+        """
+        Add FLR, SIR and OTHER region using dict_block keys and according the strand and 5' and 3' FLR sizes.
+        :param dict_blocks: Dictionnay with block positions as keys and block content as value.
+        :param seq_len: Length of of the sequence
+        :param strand: Sequence strand
+        :return: Dictionnary with positions as keys and annotated regions as values.
+        """
         if strand == "+":
             left_ext = FLR5_SIZE
             right_ext = FLR3_SIZE
@@ -194,109 +301,137 @@ class GFFasDict:
         else:
             raise ValueError("The strand can only be worth '+' or '-'.")
 
-        # If there is no CDS on the sequence
-        if len(startend_list) == 0:
-            region_dict[(region_start, region_end)] = "OTHER"
-            return region_dict, cds_idx_dict
+        intervals = list(dict_blocks.keys())
+        intervals.sort(key=lambda x: x[1])
+        intervals.sort(key=lambda x: x[0])
+        dict_regions = dict()  # e.g.  {(1, 5): 'OTHER', (6, 8): '5FLR', (9, 25): 'CDS', (26, 31): '3FLR', ...}
+        cursor = 1
+        if len(intervals) == 0:
+            return dict_regions
+
+        # Process on first interval
+        if (intervals[0][0] - cursor) < left_ext:
+            # SIR
+            dict_regions[(cursor, (intervals[0][0] - 1))] = "SIR"
+        elif (intervals[0][0] - cursor) == left_ext:
+            # FLR
+            dict_regions[(cursor, (intervals[0][0] - 1))] = chr_left + "FLR"
         else:
-            startend_list.sort(key=lambda x: x[0])
+            # OTHER-FLR
+            dict_regions[(cursor, ((intervals[0][0] - 1) - left_ext))] = "OTHER"
+            dict_regions[((intervals[0][0] - left_ext), (intervals[0][0] - 1))] = chr_left + "FLR"
+        dict_regions.update(dict_blocks[intervals[0]])
+        cursor = (intervals[0][1] + 1)
 
-        # Processing on first CDS
-        cds_start, cds_end = startend_list[0]
-        if (cds_start - region_start) > left_ext:
-            region_dict[(region_start, (cds_start - left_ext - 1))] = "OTHER"
-            region_dict[((cds_start - left_ext), (cds_start - 1))] = chr_left + "FLR"
-        elif (cds_start - region_start) > 0:
-            region_dict[(region_start, (cds_start - 1))] = "SIR"
-        prev_regioncds_start = cds_start
-        prev_regioncds_end = cds_end
-        prev_cds_start, prev_cds_end = startend_list[0]
-
-        # Pcessing on all CDS
-        for startend in startend_list[1:]:
-            cds_start, cds_end = startend
-
-            # Overlap region
-            if (cds_start - (prev_regioncds_end + 1)) < 0:
-                cds_idx_dict[(prev_regioncds_start, (prev_regioncds_end - (prev_regioncds_end - cds_start) - 1))] = \
-                    startend_line_dict[(prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, (prev_regioncds_end - (prev_regioncds_end - cds_start) - 1))] = \
-                    FEATURE_TYPE
-                region_dict[((prev_regioncds_end - (prev_regioncds_end - cds_start)), prev_regioncds_end)] = "OVL"
-                cds_start = (prev_regioncds_end + 1)  # For prev_cds_start to take the value '(prev_cds_stop + 1)'
-
+        # Process on next intervals
+        for interval in intervals[1:]:
             # No inter-feature region
-            elif (cds_start - (prev_regioncds_end + 1)) == 0:
-                cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = \
-                    startend_line_dict[(prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
-
-            # Short inter-feature region
-            elif (cds_start - (prev_regioncds_end + 1)) <= (left_ext + right_ext):
-                cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[
-                    (prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
-                region_dict[((prev_regioncds_end + 1), (cds_start - 1))] = "SIR"
-
+            if cursor == interval[0]:
+                pass
+            # Short inter-feature region (SIR)
+            elif (interval[0] - cursor) < (left_ext + right_ext):
+                dict_regions[(cursor, (interval[0] - 1))] = "SIR"
             # Large inter-feature region
             else:
-                # elif (cds_start - (prev_regioncds_end + 1)) >= (left_ext + right_ext):
-                cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[
-                    (prev_cds_start, prev_cds_end)]
-                region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
-                region_dict[((prev_regioncds_end + 1), (prev_regioncds_end + right_ext))] = chr_right + "FLR"
-                region_dict[((prev_regioncds_end + right_ext + 1), (cds_start - left_ext - 1))] = "OTHER"
-                region_dict[((cds_start - left_ext), (cds_start - 1))] = chr_left + "FLR"
+                if (interval[0] - cursor) == (left_ext + right_ext):
+                    # FLR-FLR
+                    dict_regions[(cursor, (cursor + right_ext - 1))] = chr_right + "FLR"
+                    dict_regions[((interval[0] - left_ext), (interval[0] - 1))] = chr_left + "FLR"
+                else:
+                    # elif (interval[0] - cursor) > (left_ext + right_ext):
+                    # FLR-OTHER-FLR
+                    dict_regions[(cursor, (cursor + right_ext - 1))] = chr_right + "FLR"
+                    dict_regions[((cursor + right_ext), (interval[0] - left_ext - 1))] = "OTHER"
+                    dict_regions[((interval[0] - left_ext), (interval[0] - 1))] = chr_left + "FLR"
+            dict_regions.update(dict_blocks[interval])
+            cursor = (interval[1] + 1)
 
-            prev_regioncds_start = cds_start
-            prev_regioncds_end = cds_end
-            prev_cds_start, prev_cds_end = startend
+        # Add last region
+        if (seq_len - (cursor - 1)) < right_ext:
+            # SIR
+            dict_regions[(cursor, seq_len)] = "SIR"
+        elif (seq_len - (cursor - 1)) == right_ext:
+            # FLR
+            dict_regions[(cursor, (cursor + right_ext - 1))] = chr_right + "FLR"
+        else:
+            # FLR-OTHER
+            dict_regions[(cursor, (cursor + right_ext - 1))] = chr_right + "FLR"
+            dict_regions[((cursor + right_ext), seq_len)] = "OTHER"
 
-        # Processing on last CDS
-        cds_idx_dict[(prev_regioncds_start, prev_regioncds_end)] = startend_line_dict[(prev_cds_start, prev_cds_end)]
-        region_dict[(prev_regioncds_start, prev_regioncds_end)] = FEATURE_TYPE
-        if (region_end - prev_regioncds_end) > right_ext:
-            region_dict[((prev_regioncds_end + 1), (prev_regioncds_end + right_ext))] = chr_right + "FLR"
-            region_dict[((prev_regioncds_end + right_ext + 1), region_end)] = "OTHER"
-        elif (region_end - prev_regioncds_end) > 0:
-            region_dict[((prev_regioncds_end + 1), region_end)] = "SIR"
+        return dict_regions
 
-        return region_dict, cds_idx_dict
-
-    def __interval2list_region(self) -> dict:
+    @staticmethod
+    def __two_interval_intersect(interval1: tuple, interval2: tuple) -> tuple:
         """
-        Returns for each seq_id, the strand re-annotated by the tool for which the nucleotides are replaced by
-        region-identifier pairs. The identifiers are unique to each region in order to ensure that each region is
-        unique.
-        e.g.
-        "ACTTGGCTG ATG CCTGTACGTAAACGGCGAGTA UAG CTTGTGGTAGCGCTT" with the CDS start with "ATG" and ends with "UAG"
-        will be transform to something like :
-        "OOOOOO555 CCC CCCCCCCCCCCCCCCCCCCCC CCC 3333333OOOOOOOO" with O: OTHER ; 5: 5'FLR (3 nucleotides long) ;
-        C: CDS ; 3 : 3'FLR (7 nucleotides long) except that each region character is a pair of regions and a unique if.
-        :return: A dictionary of lists representing the nucleotide sequence in the form of regions
+        Returns the intersection of two intervals.
+        :param interval1: Tuple of two values
+        :param interval2: Tuple of two values
+        :return: Intersection of 2 intervals (as tuple) / None if no interval
         """
-        dict_region_listannot = dict()  # e.g. {seq_id: {'+': [('OT', 0), ('OT', 0), ('5"', 1), ('CDS', 2), ...], ...}
-        region_id = 0  # unique id for each region
+        # If no intersection exists
+        if interval2[0] > interval1[1] or interval2[1] < interval1[0]:
+            return None
+        else:
+            return max(interval1[0], interval2[0]), min(interval1[1], interval2[1])
 
-        for seq_id in self.__dict_region_locannot:
-            dict_region_listannot[seq_id] = {"+": list(), "-": list()}
-            for strand in self.__dict_region_locannot[seq_id].keys():
-                for loc, annot in self.__dict_region_locannot[seq_id][strand].items():
-                    dict_region_listannot[seq_id][strand] += [(annot, region_id)] * (loc[1] - loc[0] + 1)
-                    region_id += 1
-        return dict_region_listannot
+    @staticmethod
+    def __interval_union(intervals: [tuple]) -> tuple:
+        """
+        Returns the union of a list of intervals.
+        :param intervals: Interval list
+        :return: Interval union (as tuple)
+        """
+        union = []
+        union += [i[0] for i in intervals]
+        union += [i[1] for i in intervals]
+        return min(union), max(union)
 
-    def __genome_region_sizes(self) -> str:
+    def __interval_intersections(self, intervals: [tuple]) -> list:
+        """
+        Searches for all positions where intervals overlaps to each other.
+        :param intervals: List of tuples with 2 values (start, end)
+        :return: List of all intersects
+        """
+        intersects = list()
+        len_inter = len(intervals)
+        for i in range(len_inter):
+            for j in range((i + 1), len_inter):
+                intersect = self.__two_interval_intersect(intervals[i], intervals[j])
+                if intersect:
+                    intersects.append(intersect)
+        return intersects
+
+    def __intersection_merge(self, intervals: list) -> list:
+        """
+        Groups and perform union on all intersections of a interval list.
+        :param intervals: List of intervals
+        :return: Merged intervals
+        """
+        # Group overlapping intervals into a list
+        list_relations = self.__get_relations(intervals)
+        list_unions = [self.__interval_union(relations) for relations in list_relations]
+
+        # Add non overlapping features
+        list_ovf = []
+        for relations in list_relations:
+            list_ovf += relations
+        list_nof = list(set(intervals) - set(list_ovf))
+
+        return list_unions + list_nof
+
+    @staticmethod
+    def __genome_region_sizes(dict_locregions: dict) -> str:
         """
         Returns the sum of the sizes (in nucleotide) of each region in all contigs in the targeted genome.
         Sizes format is 5FLR;3FLR;SIR;CDS;OVL;OTHER
+        :param dict_locregions: Dictionnary with positions as keys and annotated regions as values
         :Return: String with total size of each region in the genome
         """
         region_prop = {"5FLR": 0, "3FLR": 0, "SIR": 0, FEATURE_TYPE: 0, "OVL": 0, "OTHER": 0}
 
-        for seq_id in self.__dict_region_locannot:
+        for seq_id in dict_locregions:
             for strand in ['+', '-']:
-                for position, region in self.__dict_region_locannot[seq_id][strand].items():
+                for position, region in dict_locregions[seq_id][strand].items():
                     start = position[0]
                     stop = position[1]
                     region_prop[region] += (stop - start + 1)
@@ -311,51 +446,50 @@ class GFFasDict:
         p_other = region_prop["OTHER"]
         return f"5FLR={p_5flr};3FLR={p_3flr};SIR={p_sir};{FEATURE_TYPE}={p_cds};OVL={p_ovl};OTHER={p_other}"
 
-    def get_nearest_cds(self, seq_id: str, strand: chr, target_position: int) -> (str, float):
+    def get_nearest_feature(self, seq_id: str, strand: chr, target_position: int) -> (str, float):
         """
-        Returns the line of the nearest cds from the aligned position and on the aligned strand.
+        Returns the nearest feature data from the aligned position and on the aligned strand.
         :param seq_id: Subject sequence id
         :param strand: Subject strand
         :param target_position: Center of the query on the subject to consider
-        :return: CDS GFF line nearest to target position and its corresponding distance
+        :return: Feature data nearest to target position and its corresponding distance
         """
-        if len(self.__dict_region_cdslines[seq_id][strand]) == 0:
-            # If there is no CDS on this sequence
+        if len(self.dict_features[seq_id][strand]) == 0:
+            # If there is no feature on this sequence
             return None, None
         else:
-            # Searches for the nearest CDS
-            min_distance = 1_000_000_000  # Arbitrary distance value to start the search
-            nearest_cds_line = ""
+            # Searches for the nearest feature (CDS/gene)
+            min_distance = 1_000_000_000_000  # Arbitrary distance value to start the search
+            nearest_feature = None
 
-            for start_end, cds_line in self.__dict_region_cdslines[seq_id][strand].items():
-                cds_start, cds_end = start_end
-                if min(cds_start, cds_end) < target_position < max(cds_start, cds_end):
-                    # If target inside the CDS
-                    return cds_line, 0
-                distance = min(abs(cds_start - target_position), abs(cds_end - target_position))
+            for start_end, feature_id in self.dict_features[seq_id][strand].items():
+                start, end = start_end
+                if start < target_position < end:
+                    # If target inside the feature (CDS/gene)
+                    return (start, end, feature_id), 0.0
+                distance = min(abs(start - target_position), abs(end - target_position))
                 if distance < min_distance:
                     min_distance = distance
-                    nearest_cds_line = cds_line
-        return nearest_cds_line, min_distance
+                    nearest_feature = (start, end, feature_id)
+        return nearest_feature, min_distance
 
-    def get_region(self, seq_id: str, strand: chr, target_start: int, target_end: int) -> str:
+    def get_region(self, seq_id: str, strand: chr, target_position: int) -> str:
         """
-        Parses the dictionary of region lists and returns in which region(s) the target match.
+        Parses the region dictionary and returns in which region the target match.
         :param seq_id: Subject sequence id
         :param strand: Subject strand
-        :param target_start: Start position of the target on the subject sequence (subject start)
-        :param target_end: Stop position of the target on the subject sequence (subject end)
-        :return: Return the annoted region(s) of this coordinates (separated by a '-', if multiple targeted regions)
+        :param target_position: Center of the query on the subject to consider
+        :return: Return the annoted region of this coordinate
         """
-        list_pairs = self.__dict_region_listannot[seq_id][strand]
-        list_covered_pairs = list_pairs[(target_start - 1):target_end]
-        list_covered_pairs_nr = list(dict.fromkeys(list_covered_pairs))  # removes redundancies
-        list_covered_regions = [pair[0] for pair in list_covered_pairs_nr]
-        if strand == "-":
-            list_covered_regions.reverse()
-
-        str_covered_regions = "-".join(list_covered_regions)
-        return str_covered_regions
+        for start_end, region in self.dict_locregions[seq_id][strand].items():
+            start, end = start_end
+            if start <= target_position <= end:
+                return region
+        if len(self.dict_locregions[seq_id][strand]) == 0:
+            # If no feature on this strand
+            return ""
+        else:
+            raise ValueError(f"No region found for '{target_position}'")
 
 
 def main():
@@ -364,13 +498,13 @@ def main():
     input_lines = parse_file_lines(INPUT, has_header=HEADER)
     input_line_number = len(input_lines)
     output_lines = []
-    not_nearest_cds = 0
+    not_nearest_feature = 0
 
     # Display parameters in log file
     if VERBOSE:
         log_file = open_file(LOG_FILE, "at")
         log_file.write(f"#{'-' * 50}\n")
-        time_now = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
+        time_now = time.strftime("%Y-%m-%d at %H:%M:%S")
         log_file.write(f"#Log of align2cdsRegions v{VERSION} on {time_now}\n"
                        f"\n"
                        f"#Parameters\n"
@@ -410,23 +544,21 @@ def main():
         target_end = int(line_split[SEND - 1])
         strand = line_split[STRAND - 1]
 
-        # Searches for the nearest cds and its distance
+        # Searches for the nearest feature (cds/gene) and its distance
         target_center = (target_start + target_end) / 2
-        nearest_cds, nearest_distance = gffasdict.get_nearest_cds(sseqid, strand, target_center)
+        nearest_feature, nearest_distance = gffasdict.get_nearest_feature(sseqid, strand, target_center)
 
         # Searches for regions corresponding to the start and stop positions on the subject
-        region = gffasdict.get_region(sseqid, strand, target_start, target_end)
+        region = gffasdict.get_region(sseqid, strand, round(target_center, 0))
 
         # Write the result in the output file OUTPUT_STD
-        if not nearest_cds:
-            cds_start = cds_stop = nearest_distance = ""
-            cds_id = ""
-            not_nearest_cds += 1
+        if not nearest_feature:
+            f_start = f_end = f_id = nearest_distance = ""
+            not_nearest_feature += 1
         else:
-            _, _, _, cds_start, cds_stop, _, _, _, cds_attributes = nearest_cds[:-1].split(sep="\t")
-            cds_id = parse_cds_attributes(cds_attributes)
+            f_start, f_end, f_id = nearest_feature
 
-        output_line = f"{line[:-1]}{FS}{region}{FS}{nearest_distance}{FS}{cds_start}{FS}{cds_stop}{FS}{cds_id}\n"
+        output_line = f"{line[:-1]}{FS}{region}{FS}{nearest_distance}{FS}{f_start}{FS}{f_end}{FS}{f_id}\n"
         output_lines.append(output_line)
 
     # Ending : writes the output
@@ -442,20 +574,10 @@ def main():
     if VERBOSE:
         log_file = open_file(LOG_FILE, "at")
         log_file.write(f"#Results\n"
-                       f"Feature found for : {input_line_number - not_nearest_cds}/{input_line_number} alignments\n"
+                       f"Feature found for : {input_line_number - not_nearest_feature}/{input_line_number} alignments\n"
                        f"Region sizes      : {region_sizes}\n"
                        f"Execution time    : {round(time.time() - start_time, 2)} sec\n\n")
         log_file.close()
-
-
-def parse_cds_attributes(cds_attributes: str) -> str:
-    """
-    Parses the GFF line attributes to fetches the CDS ID.
-    :param cds_attributes: Attributes of the line (column 9 of the GFF)
-    :retrun: Return the CDS id of the attributes
-    """
-    attributes_as_list = cds_attributes.split(";")
-    return attributes_as_list[0].split("=")[1]
 
 
 def get_header(file_path: str) -> str:
@@ -513,7 +635,8 @@ def usage() -> None:
           f"send)\n"
           f"  -e, --send                  [int] column number of end position in subject (send must be greater than "
           f"sstart)\n"
-          f"  -t, --strand                [int] column number of the targeted strand on subject\n"
+          f"  -t, --strand                [int] column number of the targeted strand on subject (column values must "
+          f"contain '+' or '-' characters)\n"
           f"\n"
           f"Optional arguments :\n"
           f"  -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider "

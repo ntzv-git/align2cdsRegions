@@ -21,8 +21,6 @@ If verbose, the program returns all the parameters and total sizes of each regio
 
 ### Notes
 
-In the input alignment file, the subject end position must be greater than the subject start position.
-
 The calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
 
 If the input alignment file contains several genomes from different organisms, the best way to perform the analysis  (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a  single file (rather than running the tool one by one for each organism).
@@ -37,15 +35,14 @@ git clone https://github.com/ntzv-git/align2cdsRegions.git
 
 - python3.8
 
-### Dependencies
+### Package dependencies
 
 - getopt
 - gzip
 - os
 - sys
 - time
-- datetime (from datetime pakage)
-- SeqIO (from Bio pakage)
+- SeqIO (from Bio package)
 
 ## Usage
 
@@ -59,7 +56,7 @@ Mandatory arguments :
   -s, --sseqid                [int] column number of the subject sequence id
   -a, --sstart                [int] column number of start position in subject (sstart must be lower than send)
   -e, --send                  [int] column number of end position in subject (send must be greater than sstart)
-  -t, --strand                [int] column number of the targeted strand on subject
+  -t, --strand                [int] column number of the targeted strand on subject (column values must contain '+' or '-' characters)
 
 Optional arguments :
   -5, --5flr_size             [int] size of the 5' flanking region sequence of the CDS to consider (default is 20 nt)
@@ -74,6 +71,10 @@ Optional arguments :
 ```
   
 ### Example
+
+In this example we want to know where a small non-coding RNA (sRNA) hybridizes in the genome of _E. coli_ K12 (GCF_000005845.2).
+We first perfom a quick analyse by aligned (e.g. blast) our sRNA with the genome of _E. coli_ K12 (without forgiven to add the subject strand information in the output tabular).
+We then use align2cdsRegions.py to get the nearness of the sARN to a CDS/gene using the following command :
 
 ``` bash
 python3 align2cdsRegions.py -i Example/align_MH-DSM.tsv -o align_MH-DSM_regions.tsv -g Example/MH-DSM.gff.gz -f Example/MH-DSM.fna.gz -s 2 -a 5 -e 6 -t 8 -l -v -F
