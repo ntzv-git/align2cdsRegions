@@ -15,26 +15,31 @@ on which the query aligns.
 An OTHER annotation is indicated when the region where the query matches is neither a CDS, a FLR, a SIR nor an OVL. In
 this case, the query alignment may be far from an annotated CDS or may be on a CDS located on the other strand.
 If verbose, the program returns all the parameters and total sizes of each region (on both strands) in the log file.
+
 Note :
- - the calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In
+ - The calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In
  fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The
  "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
- - if the input alignment file contains several genomes from different organisms, the best way to perform the analysis
+ - The annotated region corresponds to the rounded center of the aligned query.
+ - The tool has only been tested for the "cds" and "gene" feature types, but it can work for all GFF column 3 features
+ (e.g. "tRNA", "rRNA" etc.)
+ - If the input alignment file contains several genomes from different organisms, the best way to perform the analysis
  (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a
  single file (rather than running the tool one by one for each organism).
 
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8
-Date    : 04/09/2023
+Date    : 06/09/2023
 
 New :
 - Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature
 region)
 - Removes intercistronic region (ICR) from possible annotated regions
 - Adds the distance between the query center and the nearest CDS in a new column of the output
-- Improvement in the recognition of the regions covered by the query (GFFasDict.get_region())
 - Adds the possibility to perform analyses either on CDS, genes or other feature types (column 3 in the GFF)
+- Improvement of region annotation
+- The annotated region corresponds to the rounded center of the aligned query
 """
 
 import getopt
@@ -76,8 +81,6 @@ class GFFasDict:
         dict_seqid_len = self.__parse_fasta(fasta_path)
         self.dict_features = self.__parse_gff(list_gfflines, dict_seqid_len)
         self.dict_locregions = self.__parse_region(self.dict_features)
-        # print(f"dict_locregions : {self.dict_locregions}")
-        # sys.exit(0)
         self.region_sizes = self.__genome_region_sizes(self.dict_locregions)
 
     @staticmethod
@@ -167,7 +170,6 @@ class GFFasDict:
                 dict_blocks = dict()
                 for block in list_relations:
                     list_ovf += block
-
                     # Search for all positions where the features overlaps to each other
                     list_intersects = self.__interval_intersections(block)
 
@@ -215,11 +217,11 @@ class GFFasDict:
         """
         if parent not in graph:
             return set()
+        # return set(graph[parent] + [j for i in graph[parent] for j in self.__all_children(i, graph)])
         ll = list()
         for i in graph[parent]:
             for j in self.__all_children(i, graph):
                 ll.append(j)
-        # return set(graph[parent] + [j for i in graph[parent] for j in all_children(i, graph)])
         return set(graph[parent] + ll)
 
     def __get_relations(self, intervals: [tuple]) -> list:
@@ -234,7 +236,11 @@ class GFFasDict:
         # Make a directed acyclic graph based on relationships
         overlap_graph = {}
         for parent, child in pairwise_relations:
-            overlap_graph.setdefault(parent, []).append(child)
+            overlap_graph.setdefault(parent, set()).add(child)
+        for parent, childs in overlap_graph.items():
+            if parent in childs:
+                childs.discard(parent)
+            overlap_graph[parent] = list(childs)
 
         # Search for all roots of the graph (parents who are not children of another)
         childs = set(child for child_list in overlap_graph.values() for child in child_list)
