@@ -19,6 +19,12 @@ An OTHER annotation is indicated when the region where the query matches is neit
 
 If verbose, the program returns all the parameters and total sizes of each region (on both strands) in the log file.
 
+### Workflow
+
+![Region-annotation](Pictures/01_region-annotation.png)
+
+![Region-and-nearest-CDS](Pictures/02_region-and-nearest-CDS.png)
+
 ### Notes
 
 The calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
@@ -73,7 +79,7 @@ Optional arguments :
   -F, --force                 delete the output file if it exists
   -h, --help                  how to use the program
 ```
-  
+
 ### Example
 
 In this example we want to know where the small non-coding RNA (sRNA) "sRNA-MIMAT0000177" hybridizes in the genome of _E. coli_ K12 ([GCF_000005845.2](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000005845.2/)).
@@ -84,7 +90,26 @@ We then use align2cdsRegions.py to get the nearness of the sARN to a CDS/gene us
 python3 align2cdsRegions.py -i Example/align_coli-K12.tsv -o align_coli-K12_regions.tsv -g Example/ecoli-K12.gff.gz -f Example/ecoli-K12.fna.gz -s 2 -a 9 -e 10 -t 13 -l -v -F
 ```
 
-Concerning the parameters : "-i align_coli-K12.tsv" is the input file (corresponding to a modified blast output file in which the "plus" and "minus" strands have been replaced by "+" and "-" respectively) ; "-o align_coli-K12_regions.tsv" is the output file ; "-s 2" indicates that the target sequence id is in column 2 ; "-a 9" indicates that the start of the aligned position of the query is in column 9 ; "-e 10" indicates that the end of the aligned position of the query is in column 10 ; "-t 13" indicates that the aligned strand is in column 13 ; "-l" indicates that the input alignment file has a first line header ; "-F" indicates to delete the output file if it already exists.
+Concerning the parameters : 
+`-i align_coli-K12.tsv` is the input file (corresponding to a modified blast output file in which the "plus" and "minus" strands have been replaced by "+" and "-" respectively) ; 
+`-o align_coli-K12_regions.tsv` is the output file ; 
+`-g Example/ecoli-K12.gff.gz` is the gene feature file of _E. coli_ K12 ; 
+`-f Example/ecoli-K12.fna.gz` if the genome sequence file of _E. coli_ K12 ; 
+`-s 2` indicates that the target sequence id is in column 2 ; 
+`-a 9` indicates that the start of the aligned position of the query is in column 9 ; 
+`-e 10` indicates that the end of the aligned position of the query is in column 10 ; 
+`-t 13` indicates that the aligned strand is in column 13 ; 
+`-l` indicates that the input alignment file has a first line header ; 
+`-v` indicates to write a log file with some supplementary information ; 
+`-F` indicates to delete the output file if it already exists.
+
+Results :
+
+qseqid | sacc | pident | length | mismatch | gapopen | qstart | qend | sstart | send | evalue | bitscore | sstrand | region | cds_dist | cds_start | cds_end | cds_id
+-------|------|--------|--------|----------|---------|--------|------|--------|------|--------|----------|---------|--------|----------|-----------|---------|-------
+sRNA-MIMAT0000177 | NC_000913.3 | 91.667 | 12 | 1 | 0 | 5 | 16 | 585641 | 585652 | 106 | 17.7 | - | 5FLR | 13.5 | 584680 | 585633 | cds-NP_415097.1
+
+In this example, we obtain an alignment that matches upstream of the OmpT protein ("cds-NP_415097.1"), which is an outer membrane protease.
 
 ## License
 

@@ -30,7 +30,7 @@ Note :
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8
-Date    : 06/09/2023
+Date    : 07/09/2023
 
 New :
 - Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature
@@ -40,6 +40,8 @@ region)
 - Adds the possibility to perform analyses either on CDS, genes or other feature types (column 3 in the GFF)
 - Improvement of region annotation
 - The annotated region corresponds to the rounded center of the aligned query
+- Replacement of the example by E. coli K12
+- Readme update: example and program workflow diagram added
 """
 
 import getopt
