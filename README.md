@@ -21,17 +21,21 @@ If verbose, the program returns all the parameters and total sizes of each regio
 
 ### Workflow
 
+#### Region annotation
+
 ![Region-annotation](Pictures/01_region-annotation.png)
+
+#### Determining the alignment region and finding the nearest CDS
 
 ![Region-and-nearest-CDS](Pictures/02_region-and-nearest-CDS.png)
 
 ### Notes
 
-The calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In fact, the distance is the absolute value between the aligned center of query and the CDS start and stop positions. The "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
+The calculation of the distance to the nearest CDS is optimized for query lengths shorter than those of the CDSs. In fact, the distance is the absolute value between the aligned center of query and the CDS start and end positions. The "cds_dist" column can also be set to 0 if the query center is inside the annotated CDS.
 
 The annotated region corresponds to the rounded center of the aligned query.
 
-The tool has only been tested for the "cds" and "gene" feature types, but it can work for all GFF column 3 features (e.g. "tRNA", "rRNA" etc.).
+The tool has only been tested for the "cds" and "gene" feature types, but it can work for all GFF column 3 features (e.g. "tRNA", "rRNA", "exon" etc.).
 
 If the input alignment file contains several genomes from different organisms, the best way to perform the analysis  (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a  single file (rather than running the tool one by one for each organism).
 
@@ -105,9 +109,9 @@ Concerning the parameters :
 
 Results :
 
-qseqid | sacc | pident | length | mismatch | gapopen | qstart | qend | sstart | send | evalue | bitscore | sstrand | region | cds_dist | cds_start | cds_end | cds_id
--------|------|--------|--------|----------|---------|--------|------|--------|------|--------|----------|---------|--------|----------|-----------|---------|-------
-sRNA-MIMAT0000177 | NC_000913.3 | 91.667 | 12 | 1 | 0 | 5 | 16 | 585641 | 585652 | 106 | 17.7 | - | 5FLR | 13.5 | 584680 | 585633 | cds-NP_415097.1
+| qseqid            | sacc        | pident | length | mismatch | gapopen | qstart | qend | sstart | send   | evalue | bitscore | sstrand | region | cds_dist | cds_start | cds_end | cds_id          |
+|-------------------|-------------|--------|--------|----------|---------|--------|------|--------|--------|--------|----------|---------|--------|----------|-----------|---------|-----------------|
+| sRNA-MIMAT0000177 | NC_000913.3 | 91.667 | 12     | 1        | 0       | 5      | 16   | 585641 | 585652 | 106    | 17.7     | -       | 5FLR   | 13.5     | 584680    | 585633  | cds-NP_415097.1 |
 
 In this example, we obtain an alignment that matches upstream of the OmpT protein ("cds-NP_415097.1"), which is an outer membrane protease.
 
