@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-The program adds to the input alignments, the region where the query match on the subject, as well as the distance,
+The program adds to the input alignments (e.g. blast), the region where the query match on the subject, as well as the distance,
 coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a 3' flanking region
 (3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a region located
 elsewhere on the sequence (OTHER).

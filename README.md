@@ -9,7 +9,7 @@ Version : 1.2
 
 ## Description
 
-The program adds to the input alignments, the region where the query match on the subject, as well as the distance, coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a 3' flanking region (3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a region located elsewhere on the sequence (OTHER).
+The program adds to the input alignments (e.g. blast), the region where the query match on the subject, as well as the distance, coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a 3' flanking region (3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a region located elsewhere on the sequence (OTHER).
 
 The program starts by parsing the Gene Features File (GFF) and genome file (FASTA) which respectively contain the CDS and the length informations of the subject. It then transforms the subject sequence into a region dictionary with the region coordinates (start, end) as key and the subject region name (CDS, FLR, OVL etc...) as value.
 
