@@ -117,4 +117,4 @@ In this example, we obtain an alignment that matches upstream of the OmpT protei
 
 ## License
 
-Free and unrestricted use.
+Released under GNU Affero General Public License v3.0 (GNU AGPLv3).

@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-The program adds to the input alignments (e.g. blast), the region where the query match on the subject, as well as the distance,
-coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a 3' flanking region
-(3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a region located
-elsewhere on the sequence (OTHER).
+Description :
+The program adds to the input alignments (e.g. blast), the region where the query match on the subject, as well as the
+distance, coordinates and ID of the cds nearest to them. These regions can be a 5' flanking region (5FLR), a
+3' flanking region (3FLR), a CDS region (CDS), a small inter-feature region (SIR), an overlapping region (OVL), or a
+region located elsewhere on the sequence (OTHER).
 The program starts by parsing the Gene Features File (GFF) and genome file (FASTA) which respectively contain the CDS
 and the length informations of the subject. It then transforms the subject sequence into a region dictionary with the
 region coordinates (start, end) as key and the subject region name (CDS, FLR, OVL etc...) as value.
@@ -31,6 +32,15 @@ Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8
 Date    : 07/09/2023
+
+LICENSE :
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later
+version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program. If not, see
+<https://www.gnu.org/licenses/>.
 
 New :
 - Replacement of 5' and 3'UTR by 5' and 3'FLR (flanking region) respectively ; and UTR by SIR (short inter-feature
