@@ -63,7 +63,7 @@ import time
 from Bio import SeqIO
 
 # Version
-VERSION = "1.2"
+VERSION = "1.2.1"
 
 # Default parameters
 INPUT = None
@@ -507,7 +507,7 @@ class GFFasDict:
             # If no feature on this strand
             return ""
         else:
-            raise ValueError(f"No region found for '{target_position}'")
+            raise ValueError(f"No region found for '{seq_id}' at '{target_position}'")
 
 
 def main():
