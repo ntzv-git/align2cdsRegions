@@ -4,7 +4,7 @@
 Author  : Emmanuel Clostres
 Mail    : emmanuel.clostres@univ-rennes.fr
 Python  : v3.8+
-Version : 1.2
+Version : 1.2.1
 </pre>
 
 ## Description
