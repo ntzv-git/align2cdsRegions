@@ -39,6 +39,8 @@ The tool has only been tested for the "cds" and "gene" feature types, but it can
 
 If the input alignment file contains several genomes from different organisms, the best way to perform the analysis  (in terms of performance) is to respectively pool all the FASTA and GFF files from all the organisms concerned into a  single file (rather than running the tool one by one for each organism).
 
+When the tool cannot find a CDS (even a distant one) for an alignment (query), it means that there is no annotated CDS on the target sequence strand.
+
 ## Installation
 
 ```bash
